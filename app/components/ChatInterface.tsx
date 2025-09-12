@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, MessageSquare, Plus } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, Bot, User, Settings, Plus, MessageSquare } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -10,90 +10,35 @@ interface Message {
   timestamp: Date;
 }
 
-interface Chat {
-  id: string;
-  title: string;
-  messages: Message[];
-  createdAt: Date;
-}
-
 export default function ChatInterface() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const currentChat = chats.find(chat => chat.id === currentChatId);
-  const messages = currentChat?.messages || [];
-
-  // Auto-scroll ke bawah
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [input]);
-
-  const createNewChat = () => {
-    const newChat: Chat = {
-      id: Date.now().toString(),
-      title: 'New Chat',
-      messages: [],
-      createdAt: new Date()
-    };
-    setChats(prev => [newChat, ...prev]);
-    setCurrentChatId(newChat.id);
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-    let chatId = currentChatId;
-    if (!chatId) {
-      const newChat: Chat = {
-        id: Date.now().toString(),
-        title: 'New Chat',
-        messages: [],
-        createdAt: new Date()
-      };
-      setChats(prev => [newChat, ...prev]);
-      chatId = newChat.id;
-      setCurrentChatId(chatId);
-    }
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
-      timestamp: new Date()
+      content: inputValue.trim(),
+      timestamp: new Date(),
     };
 
-    setChats(prev =>
-      prev.map(chat =>
-        chat.id === chatId
-          ? {
-              ...chat,
-              messages: [...chat.messages, userMessage],
-              title:
-                chat.messages.length === 0
-                  ? userMessage.content.slice(0, 30) +
-                    (userMessage.content.length > 30 ? '...' : '')
-                  : chat.title
-            }
-          : chat
-      )
-    );
-
-    setInput('');
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
     setIsLoading(true);
 
     try {
@@ -101,54 +46,94 @@ export default function ChatInterface() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...(currentChat?.messages || []), userMessage]
-        })
+          messages: [...messages, userMessage].map(({ role, content }) => ({
+            role,
+            content,
+          })),
+        }),
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
 
-      let messageText: string = "";
+      const data = await response.json();
+      console.log('Raw API Response:', data);
+
+      let assistantContent = '';
+
+      // Function to recursively parse nested JSON strings
+      const parseNestedJson = (obj: unknown): unknown => {
+        if (typeof obj === 'string') {
+          try {
+            // Try to parse as JSON
+            const parsed = JSON.parse(obj);
+            return parseNestedJson(parsed);
+          } catch {
+            // If it's not valid JSON, return as is
+            return obj;
+          }
+        } else if (typeof obj === 'object' && obj !== null) {
+          // If it's an object, check for content or message properties
+          // Use type assertion to access properties safely
+          const o = obj as { [key: string]: unknown };
+          if (o.content) {
+            return parseNestedJson(o.content);
+          } else if (o.message) {
+            return parseNestedJson(o.message);
+          }
+          return obj;
+        }
+        return obj;
+      };
 
       try {
-        // kalau ternyata string JSON, parse
-        if (typeof data.message === "string" && data.message.trim().startsWith("{")) {
-          const parsed = JSON.parse(data.message);
-          messageText = parsed.content || data.message;
+        // Parse the nested JSON structure
+        const parsedContent = parseNestedJson(data);
+
+        if (typeof parsedContent === 'string') {
+          assistantContent = parsedContent;
+        } else if (parsedContent && typeof parsedContent === 'object') {
+          assistantContent =
+            typeof parsedContent === 'object' && parsedContent !== null
+              ? ((parsedContent as { content?: string; message?: string; text?: string }).content ||
+                (parsedContent as { content?: string; message?: string; text?: string }).message ||
+                (parsedContent as { content?: string; message?: string; text?: string }).text ||
+                'No content found')
+              : 'No content found';
         } else {
-          messageText = data.message;
+          assistantContent = String(parsedContent) || 'No response received';
         }
-      } catch {
-        messageText = data.message;
+
+        console.log('Parsed content:', assistantContent);
+
+      } catch (error) {
+        console.error('Error parsing response:', error);
+        // Fallback to original logic
+        if (data && typeof data === 'object') {
+          assistantContent = data.content || data.message || data.text || 'No content found';
+        } else {
+          assistantContent = String(data) || 'No response received';
+        }
       }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: messageText,
-        timestamp: new Date()
+        role: 'assistant',
+        content: assistantContent,
+        timestamp: new Date(),
       };
 
-      setChats(prev =>
-        prev.map(chat =>
-          chat.id === chatId
-            ? { ...chat, messages: [...chat.messages, assistantMessage] }
-            : chat
-        )
-      );
-    } catch {
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Error:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '⚠️ Error, please try again.',
-        timestamp: new Date()
+        content: 'Sorry, something went wrong. Please try again.',
+        timestamp: new Date(),
       };
-      setChats(prev =>
-        prev.map(chat =>
-          chat.id === chatId
-            ? { ...chat, messages: [...chat.messages, errorMessage] }
-            : chat
-        )
-      );
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -157,156 +142,201 @@ export default function ChatInterface() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(e as any);
+      handleSubmit();
     }
   };
 
+  const newChat = () => {
+    setMessages([]);
+  };
+
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       {/* Sidebar */}
-      <div
-        className={`${
-          sidebarOpen ? 'w-64' : 'w-0'
-        } transition-all duration-300 bg-sidebar-bg glass flex flex-col overflow-hidden`}
-      >
-        <div className="p-4 border-b border-gray-700">
-          <button
-            onClick={createNewChat}
-            className="w-full flex items-center gap-2 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors"
-          >
-            <Plus size={16} />
-            New Chat
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {chats.map(chat => (
-            <div
-              key={chat.id}
-              className={`flex items-center justify-between w-full p-3 text-left hover:bg-gray-700 transition-colors border-l-2 ${
-                currentChatId === chat.id
-                  ? 'bg-gray-700 border-l-blue-500'
-                  : 'border-l-transparent'
-              }`}
+      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} lg:w-64 transition-all duration-300 overflow-hidden bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700`}>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <button
+              onClick={newChat}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
             >
-              {/* Klik judul chat untuk open */}
-              <button
-                onClick={() => setCurrentChatId(chat.id)}
-                className="flex items-center gap-2 flex-1 truncate"
-              >
-                <MessageSquare size={14} />
-                <span className="text-sm truncate">{chat.title}</span>
-              </button>
+              <Plus className="w-4 h-4" />
+              New Chat
+            </button>
+          </div>
 
-              {/* Tombol hapus */}
-              <button
-                onClick={() => setChats(prev => prev.filter(c => c.id !== chat.id))}
-                className="ml-2 text-gray-400 hover:text-red-500 transition"
-              >
-                ✕
-              </button>
+          {/* Chat History */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+              Recent Chats
             </div>
-          ))}
+            <div className="space-y-1">
+              <div className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer">
+                <MessageSquare className="w-4 h-4" />
+                Chat with AI Assistant
+              </div>
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+              <Settings className="w-4 h-4" />
+              Settings
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col bg-chat-bg">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between glass">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <MessageSquare size={20} />
-            </button>
-            <h1 className="text-xl font-semibold gradient-text">
-              IBM Granite Chat
-            </h1>
-          </div>
-        </div>
+        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <Bot className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    IBM Granite AI
+                  </h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Powered by Replicate
+                  </p>
+                </div>
+              </div>
+            </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-8">
+            <div className="flex items-center gap-2">
+              <div className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs font-medium rounded-full">
+                Online
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <Bot size={64} className="mb-4" />
-              <h2 className="text-2xl font-semibold mb-2 gradient-text">
-                IBM Granite AI
-              </h2>
-              <p>Start a conversation by sending a message below</p>
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center max-w-md mx-auto px-4">
+                <div className="flex items-center justify-center">
+                  <Bot className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                  Welcome to IBM Granite AI
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  Start a conversation with our AI assistant. Ask questions, get help with tasks, or just chat!
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="space-y-6 max-w-3xl mx-auto">
-              {messages.map(msg => (
+            <div className=" mx-auto px-4 py-4 space-y-6">
+              {messages.map((message) => (
                 <div
-                  key={msg.id}
-                  className={`flex gap-4 message-appear ${
-                    msg.role === 'user' ? 'flex-row-reverse' : ''
-                  }`}
+                  key={message.id}
+                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      msg.role === 'user' ? 'bg-blue-600' : 'bg-green-600'
-                    }`}
-                  >
-                    {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                  </div>
-                  <div className="flex-1">
-                    <div
-                      className={`p-4 rounded-2xl shadow-md max-w-md ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white ml-auto'
-                          : 'bg-gray-800 text-gray-100'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {/* Assistant Avatar */}
+                  {message.role === 'assistant' && (
+                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                      <Bot className="w-5 h-5 text-white" />
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {msg.timestamp.toLocaleTimeString()}
+                  )}
+
+                  <div className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    {/* Chat bubble */}
+                    <div
+                      className={`max-w-xs md:max-w-md rounded-2xl ${message.role === 'user'
+                        ? 'bg-blue-500 text-white rounded-br-sm self-end px-4 py-2'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-sm self-start px-4 py-2'
+                        }`}
+                    >
+                      <div className="whitespace-pre-wrap leading-relaxed break-words">
+                        {message.content}
+                      </div>
+                    </div>
+
+                    {/* Timestamp */}
+                    <div
+                      className={`text-xs mt-1 opacity-70 ${message.role === 'user'
+                        ? 'text-blue-100 text-right'
+                        : 'text-gray-500 dark:text-gray-400 text-left'
+                        }`}
+                    >
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+
+                  {/* User Avatar */}
+                  {message.role === 'user' && (
+                    <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                      <User className="w-5 h-5 text-white" />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {isLoading && (
+                <div className="flex gap-3 justify-start">
+                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="max-w-3xl px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
-        {/* Input */}
-        <div className="p-4 border-t border-gray-700 glass">
-          <form onSubmit={sendMessage} className="max-w-7xl mx-auto">
-            <div className="relative flex items-end gap-3">
+        {/* Input Area */}
+        <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center gap-3">
               <div className="flex-1 relative">
                 <textarea
                   ref={textareaRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type your message..."
-                  className="w-full p-3 pr-12 bg-gray-900/50 border border-gray-600 rounded-xl focus:outline-none focus:border-blue-500 resize-none min-h-[44px] max-h-32"
                   rows={1}
+                  className="w-full resize-none rounded-2xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 min-h-[48px] max-h-32"
                   disabled={isLoading}
                 />
-                <button
-                  type="submit"
-                  disabled={!input.trim() || isLoading}
-                  className="absolute right-2 bottom-2 p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-                >
-                  {isLoading ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Send size={16} />
-                  )}
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => handleSubmit()}
+                disabled={!inputValue.trim() || isLoading}
+                className="flex items-center justify-center w-12 h-12 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-2xl transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+              >
+                <Send className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2 text-center">
-              Press <span className="font-semibold">Enter</span> to send,{' '}
-              <span className="font-semibold">Shift+Enter</span> for new line
-            </p>
-          </form>
+            <div className="mt-2 text-xs text-center text-gray-500 dark:text-gray-400">
+              Press Enter to send, Shift+Enter for new line
+            </div>
+          </div>
         </div>
+
       </div>
     </div>
   );

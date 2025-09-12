@@ -2,6 +2,14 @@
 
 Aplikasi chat AI modern yang menggunakan model IBM Granite 3.3-8b-instruct melalui Replicate API, dibangun dengan Next.js 15 dan tampilan mirip Chat Ai pada umumnya.
 
+## Teknologi
+
+- **Next.js 15** - React framework dengan App Router
+- **TypeScript** - Menjamin type safety
+- **Tailwind CSS** - Utility-first CSS framework
+- **Replicate API** - Model hosting untuk IBM Granite
+- **Lucide React** - Ikon modern dan ringan
+
 ## Fitur
 
 - 🎨 UI modern mirip Chat Ai pada umumnya dengan dark theme
@@ -13,19 +21,14 @@ Aplikasi chat AI modern yang menggunakan model IBM Granite 3.3-8b-instruct melal
 - 🔄 Auto-scroll ke pesan terbaru
 - ⌨️ Keyboard shortcuts (Enter to send, Shift+Enter for new line)
 
-## Teknologi
-
-- **Next.js 15** - React framework dengan App Router
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first CSS framework
-- **Replicate API** - IBM Granite model hosting
-- **Lucide React** - Beautiful icons
-
 ## Setup Project
 
 ### 1. Clone/Download Files
 
-Buat folder project baru dan copy semua file yang sudah dibuat.
+```bash
+git clone https://github.com/username/granite-chat-ai.git
+cd granite-chat-ai
+```
 
 ### 2. Install Dependencies
 
@@ -43,7 +46,7 @@ Buat file `.env.local` di root project:
 REPLICATE_API_TOKEN=Token API REPLICATE
 ```
 
-**⚠️ Penting:** Ganti token di atas dengan token Replicate yang valid. Token yang diberikan mungkin sudah expired.
+**⚠️ Penting:** Pastikan mengganti dengan token Replicate yang valid.
 
 ### 4. Run Development Server
 
@@ -55,97 +58,19 @@ yarn dev
 
 Buka [http://localhost:3000](http://localhost:3000) di browser.
 
-## Struktur Project
+## 🧠 AI Support Explanation
 
-```
-granite-chat-ai/
-├── app/
-│   ├── api/
-│   │   └── chat/
-│   │       └── route.ts          # API endpoint untuk chat
-│   ├── components/
-│   │   └── ChatInterface.tsx     # Main chat component
-│   ├── globals.css               # Global styles
-│   ├── layout.tsx               # Root layout
-│   └── page.tsx                 # Home page
-├── .env.local                   # Environment variables
-├── next.config.js              # Next.js configuration
-├── tailwind.config.js          # Tailwind CSS configuration
-├── postcss.config.js           # PostCSS configuration
-└── package.json                # Dependencies
-```
+Aplikasi ini menggunakan **IBM Granite 3.3-8b-instruct** melalui **Replicate API** sebagai otak percakapan, untuk menjawab pertanyaan dan merespons input pengguna secara interaktif.
 
-## Konfigurasi API
+* Model Granite dipanggil dari endpoint `app/api/chat/route.ts`.
+* Parameter default yang digunakan:
 
-Model yang digunakan: `ibm-granite/granite-3.3-8b-instruct`
+  * `max_tokens`: 512
+  * `temperature`: 0.6
+  * `top_p`: 0.9
+  * `top_k`: 50
+* Pengguna dapat menyesuaikan parameter ini sesuai kebutuhan untuk mengatur gaya respons AI.
 
-Parameter default:
-- `max_tokens`: 512
-- `temperature`: 0.6
-- `top_p`: 0.9
-- `top_k`: 50
+## 📜 License
 
-Anda bisa menyesuaikan parameter ini di file `app/api/chat/route.ts`.
-
-## Customization
-
-### Mengubah Tema
-Edit variabel warna di `tailwind.config.js`:
-
-```javascript
-colors: {
-  'chat-bg': '#212121',      // Background utama
-  'sidebar-bg': '#171717',   // Background sidebar
-  'message-bg': '#2f2f2f',   // Background pesan
-  'user-message': '#2563eb', // Warna pesan user
-}
-```
-
-### Mengubah Model AI
-Ganti URL model di `app/api/chat/route.ts`:
-
-```typescript
-const response = await fetch('https://api.replicate.com/v1/models/MODEL_NAME/predictions', {
-  // ...
-});
-```
-
-## Deployment
-
-### Vercel (Recommended)
-1. Push code ke GitHub
-2. Connect repository di [Vercel](https://vercel.com)
-3. Tambahkan environment variable `REPLICATE_API_TOKEN`
-4. Deploy!
-
-### Netlify
-1. Build project: `npm run build`
-2. Upload folder `out` ke Netlify
-3. Set environment variables
-
-## Troubleshooting
-
-### 1. API Token Error
-Pastikan `REPLICATE_API_TOKEN` sudah diset dengan benar di `.env.local`.
-
-### 2. Build Error
-Pastikan semua dependencies terinstall:
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### 3. Replicate API Error
-Cek status API di [Replicate Status](https://status.replicate.com/)
-
-## Contributing
-
-1. Fork repository
-2. Buat feature branch
-3. Commit changes
-4. Push ke branch
-5. Create Pull Request
-
-## License
-
-MIT License - feel free to use for personal and commercial projects.
+MIT License – bebas digunakan untuk proyek personal maupun komersial.
