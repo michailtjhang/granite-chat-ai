@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Settings, Plus, MessageSquare } from 'lucide-react';
+import { Send, Bot, User, Settings, Plus, MessageSquare, Trash2, Edit2, Check, X } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -10,11 +10,22 @@ interface Message {
   timestamp: Date;
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  lastUpdated: Date;
+}
+
 export default function ChatInterface() {
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -25,6 +36,106 @@ export default function ChatInterface() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Generate a title from the first message
+  const generateChatTitle = (firstMessage: string): string => {
+    const words = firstMessage.split(' ');
+    if (words.length <= 6) {
+      return firstMessage;
+    }
+    return words.slice(0, 6).join(' ') + '...';
+  };
+
+  // Save current chat session
+  const saveCurrentChat = () => {
+    if (currentChatId && messages.length > 0) {
+      setChatSessions(prev =>
+        prev.map(chat =>
+          chat.id === currentChatId
+            ? { ...chat, messages, lastUpdated: new Date() }
+            : chat
+        )
+      );
+    }
+  };
+
+  // Load a chat session
+  const loadChat = (chatId: string) => {
+    saveCurrentChat(); // Save current chat before switching
+
+    const chat = chatSessions.find(c => c.id === chatId);
+    if (chat) {
+      setCurrentChatId(chatId);
+      setMessages(chat.messages);
+    }
+  };
+
+  // Create new chat
+  const newChat = () => {
+    saveCurrentChat(); // Save current chat before creating new one
+
+    const newChatId = Date.now().toString();
+    setCurrentChatId(newChatId);
+    setMessages([]);
+
+    // Create new chat session (will be saved when first message is sent)
+    const newSession: ChatSession = {
+      id: newChatId,
+      title: 'New Chat',
+      messages: [],
+      lastUpdated: new Date()
+    };
+
+    setChatSessions(prev => [newSession, ...prev]);
+  };
+
+  // Delete chat
+  const deleteChat = (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    setChatSessions(prev => prev.filter(chat => chat.id !== chatId));
+
+    if (currentChatId === chatId) {
+      // If we're deleting the current chat, switch to the next available chat or create new one
+      const remainingChats = chatSessions.filter(chat => chat.id !== chatId);
+      if (remainingChats.length > 0) {
+        const nextChat = remainingChats[0];
+        setCurrentChatId(nextChat.id);
+        setMessages(nextChat.messages);
+      } else {
+        // No chats left, create a new one
+        newChat();
+      }
+    }
+  };
+
+  // Start editing chat title
+  const startEditingTitle = (chatId: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingChatId(chatId);
+    setEditingTitle(currentTitle);
+  };
+
+  // Save edited title
+  const saveEditedTitle = () => {
+    if (editingChatId && editingTitle.trim()) {
+      setChatSessions(prev =>
+        prev.map(chat =>
+          chat.id === editingChatId
+            ? { ...chat, title: editingTitle.trim() }
+            : chat
+        )
+      );
+    }
+    setEditingChatId(null);
+    setEditingTitle('');
+  };
+
+  // Cancel editing
+  const cancelEditing = () => {
+    setEditingChatId(null);
+    setEditingTitle('');
+  };
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -37,16 +148,29 @@ export default function ChatInterface() {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInputValue('');
     setIsLoading(true);
+
+    // If this is the first message in a new chat, update the title
+    if (messages.length === 0 && currentChatId) {
+      const newTitle = generateChatTitle(userMessage.content);
+      setChatSessions(prev =>
+        prev.map(chat =>
+          chat.id === currentChatId
+            ? { ...chat, title: newTitle, messages: newMessages, lastUpdated: new Date() }
+            : chat
+        )
+      );
+    }
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, userMessage].map(({ role, content }) => ({
+          messages: newMessages.map(({ role, content }) => ({
             role,
             content,
           })),
@@ -124,7 +248,19 @@ export default function ChatInterface() {
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      const finalMessages = [...newMessages, assistantMessage];
+      setMessages(finalMessages);
+
+      // Update the chat session with the complete conversation
+      if (currentChatId) {
+        setChatSessions(prev =>
+          prev.map(chat =>
+            chat.id === currentChatId
+              ? { ...chat, messages: finalMessages, lastUpdated: new Date() }
+              : chat
+          )
+        );
+      }
     } catch (error) {
       console.error('Error:', error);
       const errorMessage: Message = {
@@ -146,9 +282,23 @@ export default function ChatInterface() {
     }
   };
 
-  const newChat = () => {
-    setMessages([]);
-  };
+  // Initialize with a new chat if no chats exist
+  useEffect(() => {
+    if (chatSessions.length === 0) {
+      const newChatId = Date.now().toString();
+      setCurrentChatId(newChatId);
+      setMessages([]);
+
+      const newSession: ChatSession = {
+        id: newChatId,
+        title: 'New Chat',
+        messages: [],
+        lastUpdated: new Date()
+      };
+
+      setChatSessions([newSession]);
+    }
+  }, [chatSessions.length]);
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -172,10 +322,65 @@ export default function ChatInterface() {
               Recent Chats
             </div>
             <div className="space-y-1">
-              <div className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer">
-                <MessageSquare className="w-4 h-4" />
-                Chat with AI Assistant
-              </div>
+              {chatSessions.map((chat) => (
+                <div
+                  key={chat.id}
+                  onClick={() => loadChat(chat.id)}
+                  className={`group flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${currentChatId === chat.id
+                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                >
+                  <MessageSquare className="w-4 h-4 flex-shrink-0" />
+
+                  {editingChatId === chat.id ? (
+                    <div className="flex-1 flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveEditedTitle();
+                          if (e.key === 'Escape') cancelEditing();
+                        }}
+                        className="flex-1 bg-transparent border-none outline-none text-sm"
+                        autoFocus
+                        onBlur={saveEditedTitle}
+                      />
+                      <button
+                        onClick={saveEditedTitle}
+                        className="p-1 text-green-600 hover:text-green-700"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={cancelEditing}
+                        className="p-1 text-red-600 hover:text-red-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="flex-1 truncate">{chat.title}</span>
+                      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                        <button
+                          onClick={(e) => startEditingTitle(chat.id, chat.title, e)}
+                          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => deleteChat(chat.id, e)}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 

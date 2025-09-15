@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="app/favicon.ico" alt="Logo" width="200" />
+</p>
+
 # IBM Granite Chat AI
 
 Aplikasi chat AI modern yang menggunakan model IBM Granite 3.3-8b-instruct melalui Replicate API, dibangun dengan Next.js 15 dan tampilan mirip Chat Ai pada umumnya.
