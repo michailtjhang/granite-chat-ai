@@ -182,63 +182,54 @@ export default function ChatInterface() {
       }
 
       const data = await response.json();
-      console.log('Raw API Response:', data);
+      // console.log('Raw API Response:', data);
 
       let assistantContent = '';
 
-      // Function to recursively parse nested JSON strings
-      const parseNestedJson = (obj: unknown): unknown => {
-        if (typeof obj === 'string') {
-          try {
-            // Try to parse as JSON
-            const parsed = JSON.parse(obj);
-            return parseNestedJson(parsed);
-          } catch {
-            // If it's not valid JSON, return as is
-            return obj;
-          }
-        } else if (typeof obj === 'object' && obj !== null) {
-          // If it's an object, check for content or message properties
-          // Use type assertion to access properties safely
-          const o = obj as { [key: string]: unknown };
-          if (o.content) {
-            return parseNestedJson(o.content);
-          } else if (o.message) {
-            return parseNestedJson(o.message);
-          }
-          return obj;
-        }
-        return obj;
-      };
-
       try {
-        // Parse the nested JSON structure
-        const parsedContent = parseNestedJson(data);
+        // Check if data has a message property that contains JSON string
+        if (data.message && typeof data.message === 'string') {
+          try {
+            // Parse the JSON string
+            const parsedMessage = JSON.parse(data.message);
+            // console.log('Parsed message:', parsedMessage);
 
-        if (typeof parsedContent === 'string') {
-          assistantContent = parsedContent;
-        } else if (parsedContent && typeof parsedContent === 'object') {
-          assistantContent =
-            typeof parsedContent === 'object' && parsedContent !== null
-              ? ((parsedContent as { content?: string; message?: string; text?: string }).content ||
-                (parsedContent as { content?: string; message?: string; text?: string }).message ||
-                (parsedContent as { content?: string; message?: string; text?: string }).text ||
-                'No content found')
-              : 'No content found';
-        } else {
-          assistantContent = String(parsedContent) || 'No response received';
+            // Check for OpenAI format response
+            if (parsedMessage.choices && Array.isArray(parsedMessage.choices) && parsedMessage.choices.length > 0) {
+              const choice = parsedMessage.choices[0];
+              if (choice.message && choice.message.content) {
+                assistantContent = choice.message.content;
+              }
+            }
+            // Fallback to direct content property
+            else if (parsedMessage.content) {
+              assistantContent = parsedMessage.content;
+            }
+          } catch (parseError) {
+            console.error('Error parsing message JSON:', parseError);
+            // If it's not JSON, treat as plain text
+            assistantContent = data.message;
+          }
+        }
+        // Direct content extraction
+        else if (data.content) {
+          assistantContent = data.content;
+        }
+        // Fallback to the original data if it's a string
+        else if (typeof data === 'string') {
+          assistantContent = data;
         }
 
-        console.log('Parsed content:', assistantContent);
+        // Final fallback
+        if (!assistantContent) {
+          assistantContent = 'No response received';
+        }
+
+        // console.log('Final assistant content:', assistantContent);
 
       } catch (error) {
         console.error('Error parsing response:', error);
-        // Fallback to original logic
-        if (data && typeof data === 'object') {
-          assistantContent = data.content || data.message || data.text || 'No content found';
-        } else {
-          assistantContent = String(data) || 'No response received';
-        }
+        assistantContent = 'Sorry, there was an error processing the response.';
       }
 
       const assistantMessage: Message = {
@@ -327,8 +318,8 @@ export default function ChatInterface() {
                   key={chat.id}
                   onClick={() => loadChat(chat.id)}
                   className={`group flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${currentChatId === chat.id
-                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                 >
                   <MessageSquare className="w-4 h-4 flex-shrink-0" />
